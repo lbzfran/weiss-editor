@@ -83,7 +83,8 @@ typedef struct erow {
 
 struct editorConfig {
     int cx, cy;
-    int rx;
+    int rx; // added ry to keep track of last farthest y
+    int px;
     int rowoff;
     int coloff;
     int screenRows;
@@ -528,6 +529,44 @@ void editorInsertRow(int at, char *s, size_t len)
     E.dirty++;
 }
 
+/*void editorRowNextWord(erow *row)*/
+/*{*/
+/**/
+/*}*/
+
+void editorMoveCursorParagraph(int direction) {
+}
+
+
+// Jump to the next paragraph: search downward for a blank line and then to the
+// first non-blank row after that blank.
+void editorMoveCursorParagraphDown() {
+    if (E.cy >= E.numRows - 1) return;  // Already at the bottom.
+
+    int target = E.cy;
+    // Search downward for a blank row.
+    for (int i = E.cy + 1; i < E.numRows; i++) {
+        if (E.row[i].size == 0) {
+            // Found a blank line. Now, jump to the first non-blank row after it.
+            for (int j = i + 1; j < E.numRows; j++) {
+                if (E.row[j].size != 0) {
+                    target = j;
+                    break;
+                }
+            }
+            // If no non-blank row exists after the blank line, stay at the blank.
+            if (target == E.cy) target = i;
+            break;
+        }
+        // If no blank line is encountered, simply go to the bottom.
+        target = i;
+    }
+
+    E.cy = target;
+    int rowlen = (E.cy < E.numRows) ? E.row[E.cy].size : 0;
+    if (E.cx > rowlen) E.cx = rowlen;
+}
+
 void editorFreeRow(erow *row)
 {
     free(row->render);
@@ -728,6 +767,40 @@ void editorSave()
     editorSetStatusMessage("Can't save! I/O error: %s", strerror(errno));
 }
 
+void editorReload() {
+    if (E.filename == NULL) {
+        editorSetStatusMessage("No file to reload.");
+        return;
+    }
+
+    // Optionally warn the user that unsaved changes will be lost.
+    // You can implement a confirmation prompt here if needed.
+
+    // Free the current file contents.
+    for (int i = 0; i < E.numRows; i++) {
+        free(E.row[i].chars);
+        // Free additional allocated members (e.g., rendered line) if applicable.
+    }
+    free(E.row);
+    E.row = NULL;
+    E.numRows = 0;
+
+    // Reopen the file to load its current contents.
+    char *filename = strdup(E.filename);
+    editorOpen(filename);
+
+    // Reset cursor position and preferred horizontal position.
+    /*E.cx = E.cy = 0;*/
+    /*E.px = 0;*/
+
+    // Mark the buffer as unmodified.
+    E.dirty = 0;
+
+    // Inform the user and refresh the screen.
+    editorSetStatusMessage("File reloaded successfully.");
+    editorRefreshScreen();
+}
+
 /*** find ***/
 
 void editorFindCallback(char *query, int key)
@@ -781,11 +854,13 @@ void editorFindCallback(char *query, int key)
             last_match = current;
             E.cy = current;
             E.cx = editorRowRxToCx(row, match - row->render);
-
             E.rowoff = getScreenCenter();
 
-            int match_len = strlen(query);
-            memset(&row->hl[match - row->render], HL_MATCH, match_len);
+            saved_hl_line = current;
+            saved_hl = malloc(row->rsize);
+            memcpy(saved_hl, row->hl, row->rsize);
+
+            memset(&row->hl[match - row->render], HL_MATCH, strlen(query));
             break;
         }
     }
@@ -1280,6 +1355,78 @@ void editorMoveCursor(int key)
 
     switch (key)
     {
+        case CTRL_ARROW_UP:
+        case CTRL_ARROW_DOWN:
+        {
+        } break;
+        case CTRL_ARROW_LEFT:
+        {
+            if (E.cy >= E.numRows) { break; }
+            row = &E.row[E.cy];
+            if (E.cx == 0)
+            {
+                if (E.cy > 0)
+                {
+                    E.cy--;
+                    row = &E.row[E.cy];
+                    E.cx = row->size;
+                }
+                break;
+            }
+
+            int pos = E.cx - 1;
+            while (pos > 0 && (row->chars[pos] == ' ' || row->chars[pos] == '\t'))
+            { pos--; }
+
+            while (pos > 0 && (row->chars[pos] != ' ' && row->chars[pos] != '\t'))
+            { pos--; }
+
+            if (row->chars[pos] == ' ' || row->chars[pos] == '\t') { pos++; }
+
+            /*if (pos < 0)*/
+            /*{*/
+            /*    E.cx = 0;*/
+            /*    break;*/
+            /*}*/
+            /**/
+            /*int wordStart = pos;*/
+            /*while (wordStart >= 0 && (row->chars[wordStart] != ' ' && row->chars[wordStart] != '\t'))*/
+            /*{ wordStart--; }*/
+            /**/
+            /*// Now, to jump to the end of the word, iterate forward from wordStart.*/
+            /*int wordEnd = wordStart + 1;*/
+            /*while (wordEnd < row->size && (row->chars[wordEnd] != ' ' && row->chars[wordEnd] != '\t'))*/
+            /*{ wordEnd++; }*/
+            /**/
+            /*// Set the cursor to the end of the word (i.e. just past the last character).*/
+            /*E.cx = wordEnd;*/
+            E.cx = pos;
+            E.px = E.cx;
+        } break;
+        case CTRL_ARROW_RIGHT:
+        {
+            if (E.cy >= E.numRows) { break; }
+            row = &E.row[E.cy];
+
+            if (E.cx >= row->size)
+            {
+                if (E.cy < E.numRows - 1)
+                {
+                    E.cy++;
+                    E.cx = 0;
+                }
+                break;
+            }
+            int pos = E.cx;
+
+            while (pos < row->size && (row->chars[pos] != ' ' && row->chars[pos] != '\t'))
+            { pos++; }
+            // Skip whitespace until the next word.
+            while (pos < row->size && (row->chars[pos] == ' ' || row->chars[pos] == '\t'))
+            { pos++; }
+            E.cx = pos;
+            E.px = E.cx;
+        } break;
         case ARROW_LEFT:
         {
             if (E.cx != 0)
@@ -1291,6 +1438,7 @@ void editorMoveCursor(int key)
                 E.cy--;
                 E.cx = E.row[E.cy].size;
             }
+            E.px = E.cx;
         } break;
         case ARROW_RIGHT:
         {
@@ -1303,19 +1451,24 @@ void editorMoveCursor(int key)
                 E.cy++;
                 E.cx = 0;
             }
+            E.px = E.cx;
         } break;
         case ARROW_UP:
         {
-            if (E.cy != 0)
+            if (E.cy > 0)
             {
                 E.cy--;
+                row = &E.row[E.cy];
+                E.cx = (E.px > row->size ? row->size : E.px);
             }
         } break;
         case ARROW_DOWN:
         {
-            if (E.cy < E.numRows)
+            if (E.cy < E.numRows - 1)
             {
                 E.cy++;
+                row = &E.row[E.cy];
+                E.cx = (E.px > row->size ? row->size : E.px);
             }
         } break;
     }
@@ -1324,6 +1477,8 @@ void editorMoveCursor(int key)
     int rowlen = row ? row->size : 0;
     if (E.cx > rowlen) { E.cx = rowlen; }
 
+
+    // NOTE(liam): margin adjust scroll
     int margin = WEISS_SCROLL_Y_MARGIN;
 
     if (E.cy < E.rowoff + margin)
@@ -1340,6 +1495,7 @@ void editorMoveCursor(int key)
 void editorProcessKeypress()
 {
     static int quitTimes = WEISS_QUIT_CONFIRM_COUNTER;
+    static int resetTimes = WEISS_QUIT_CONFIRM_COUNTER;
     int c = editorReadKey();
 
     switch (c)
@@ -1359,6 +1515,7 @@ void editorProcessKeypress()
             }
             write(STDOUT_FILENO, "\x1b[2J", 4);
             write(STDOUT_FILENO, "\x1b[H", 3);
+            /*write(STDIN_FILENO, "\033[2J\033[H\033[?1049l", 15);*/
             exit(0);
         } break;
 
@@ -1372,9 +1529,25 @@ void editorProcessKeypress()
             E.rowoff = getScreenCenter();
         } break;
 
+        case CTRL_KEY('r'):
+        {
+            // NOTE(liam): reopens current file without saving.
+            if (E.dirty && resetTimes > 0)
+            {
+                editorSetStatusMessage("UNSAVED CHANGES: "
+                        "Press C-R %d more times to reset file.", resetTimes);
+                resetTimes--;
+                return;
+            }
+            editorReload();
+        } break;
+
+        case CTRL_KEY('a'):
+        case CTRL_KEY('c'):
+        case CTRL_KEY('v'):
         case CTRL_KEY('z'):
         {
-            editorSetStatusMessage("undo not implemented");
+            editorSetStatusMessage("not implemented!");
         } break;
 
         case CTRL_KEY('j'):
@@ -1437,23 +1610,8 @@ void editorProcessKeypress()
 
         case CTRL_ARROW_UP:
         case CTRL_ARROW_DOWN:
-        {
-            int times = 4;
-            while(times--)
-            {
-                editorMoveCursor(c == CTRL_ARROW_UP ? ARROW_UP : ARROW_DOWN);
-            }
-        } break;
         case CTRL_ARROW_LEFT:
         case CTRL_ARROW_RIGHT:
-        {
-            int times = 4;
-            while(times--)
-            {
-                editorMoveCursor(c == CTRL_ARROW_LEFT ? ARROW_LEFT : ARROW_RIGHT);
-            }
-        } break;
-
         case ARROW_UP:
         case ARROW_DOWN:
         case ARROW_LEFT:
@@ -1486,6 +1644,7 @@ void editorProcessKeypress()
     }
 
     quitTimes = WEISS_QUIT_CONFIRM_COUNTER;
+    resetTimes = WEISS_QUIT_CONFIRM_COUNTER;
 }
 
 void initEditor()

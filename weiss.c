@@ -841,7 +841,11 @@ int editorReadKey()
             {
                 if (read(STDIN_FILENO, &seq[2], 1) != 1) { return '\x1b'; }
 
-                if (seq[2] == '~')
+                if (seq[2] == ';')
+                {
+                    // TODO(liam): arrow case here; check gpt
+                }
+                else if (seq[2] == '~')
                 {
                     switch (seq[1])
                     {

@@ -34,11 +34,15 @@ enum editorKey {
     ARROW_RIGHT,
     ARROW_UP,
     ARROW_DOWN,
+    CTRL_ARROW_LEFT,
+    CTRL_ARROW_RIGHT,
+    CTRL_ARROW_UP,
+    CTRL_ARROW_DOWN,
     DEL_KEY,
     HOME_KEY,
     END_KEY,
     PAGE_UP,
-    PAGE_DOWN
+    PAGE_DOWN,
 };
 
 enum editorHighlight {
@@ -830,7 +834,7 @@ int editorReadKey()
 
     if (c == '\x1b')
     {
-        char seq[3] = {0};
+        char seq[6] = {0};
 
         if (read(STDIN_FILENO, &seq[0], 1) != 1) { return '\x1b'; }
         if (read(STDIN_FILENO, &seq[1], 1) != 1) { return '\x1b'; }
@@ -844,6 +848,18 @@ int editorReadKey()
                 if (seq[2] == ';')
                 {
                     // TODO(liam): arrow case here; check gpt
+                    if (read(STDIN_FILENO, &seq[3], 1) != 1) return '\x1b';
+                    // Read the final letter that indicates the arrow direction.
+                    if (read(STDIN_FILENO, &seq[4], 1) != 1) return '\x1b';
+
+                    if (seq[3] == '5') { // Modifier 5 means Ctrl.
+                        switch (seq[4]) {
+                            case 'A': return CTRL_ARROW_UP;
+                            case 'B': return CTRL_ARROW_DOWN;
+                            case 'C': return CTRL_ARROW_RIGHT;
+                            case 'D': return CTRL_ARROW_LEFT;
+                        }
+                    }
                 }
                 else if (seq[2] == '~')
                 {
@@ -1416,6 +1432,25 @@ void editorProcessKeypress()
             while (times--)
             {
                 editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
+            }
+        } break;
+
+        case CTRL_ARROW_UP:
+        case CTRL_ARROW_DOWN:
+        {
+            int times = 4;
+            while(times--)
+            {
+                editorMoveCursor(c == CTRL_ARROW_UP ? ARROW_UP : ARROW_DOWN);
+            }
+        } break;
+        case CTRL_ARROW_LEFT:
+        case CTRL_ARROW_RIGHT:
+        {
+            int times = 4;
+            while(times--)
+            {
+                editorMoveCursor(c == CTRL_ARROW_LEFT ? ARROW_LEFT : ARROW_RIGHT);
             }
         } break;
 

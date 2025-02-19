@@ -529,13 +529,33 @@ void editorInsertRow(int at, char *s, size_t len)
     E.dirty++;
 }
 
-/*void editorRowNextWord(erow *row)*/
-/*{*/
-/**/
-/*}*/
+void editorMoveCursorParagraphUp() {
+    if (E.cy <= 0) return;  // Already at the top.
 
-void editorMoveCursorParagraph(int direction) {
+    int target = E.cy;
+    // Search upward for a blank row.
+    for (int i = E.cy - 1; i >= 0; i--) {
+        if (E.row[i].size == 0) {
+            // Found a blank line. Now, jump to the first non-blank row before it.
+            for (int j = i - 1; j >= 0; j--) {
+                if (E.row[j].size != 0) {
+                    target = j;
+                    break;
+                }
+            }
+            // If no non-blank row exists before the blank line, stay at the blank.
+            if (target == E.cy) target = i;
+            break;
+        }
+        // If no blank line is encountered, simply go to the top.
+        target = i;
+    }
+
+    E.cy = target;
+    int rowlen = (E.cy < E.numRows) ? E.row[E.cy].size : 0;
+    if (E.cx > rowlen) E.cx = rowlen;
 }
+
 
 
 // Jump to the next paragraph: search downward for a blank line and then to the
@@ -1356,8 +1376,12 @@ void editorMoveCursor(int key)
     switch (key)
     {
         case CTRL_ARROW_UP:
+        {
+            editorMoveCursorParagraphUp();
+        } break;
         case CTRL_ARROW_DOWN:
         {
+            editorMoveCursorParagraphDown();
         } break;
         case CTRL_ARROW_LEFT:
         {
